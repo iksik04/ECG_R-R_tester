@@ -2,6 +2,9 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import os
+import sys
+import argparse
+from datetime import datetime
 
 def load_reference_annotations(filepath):
     """
@@ -37,19 +40,37 @@ def load_reference_annotations(filepath):
 
 def load_predictions(filepath):
     """
-    Загрузка предсказаний алгоритма из CSV файла
+    Загрузка предсказаний алгоритма из CSV или TXT файла
     """
     print(f"Загрузка предсказаний алгоритма из: {filepath}")
-    df = pd.read_csv(filepath)
     
-    # Проверяем название колонки с пиками
-    if 'peak_index' in df.columns:
-        samples = df['peak_index'].tolist()
-    elif 'peaks' in df.columns:
-        samples = df['peaks'].tolist()
+    # Определяем формат файла по расширению
+    file_ext = Path(filepath).suffix.lower()
+    
+    if file_ext == '.csv':
+        df = pd.read_csv(filepath)
+        # Проверяем название колонки с пиками
+        if 'peak_index' in df.columns:
+            samples = df['peak_index'].tolist()
+        elif 'peaks' in df.columns:
+            samples = df['peaks'].tolist()
+        else:
+            # Если название неизвестно, берем первую колонку
+            samples = df.iloc[:, 0].tolist()
     else:
-        # Если название неизвестно, берем первую колонку
-        samples = df.iloc[:, 0].tolist()
+        # Пробуем загрузить как текстовый файл с числами
+        samples = []
+        with open(filepath, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#'):
+                    try:
+                        # Может быть одно число или несколько через разделители
+                        parts = line.replace(',', ' ').replace(';', ' ').split()
+                        for part in parts:
+                            samples.append(int(float(part)))
+                    except ValueError:
+                        continue
     
     print(f"  Загружено предсказаний алгоритма: {len(samples)}")
     return samples
@@ -117,7 +138,7 @@ def calculate_metrics(ref, pred, window):
         'used_ref': used
     }
 
-def validate_files(ref_path, pred_path):
+def validate_files(ref_path, pred_path, output_file=None):
     """
     Основная функция валидации
     """
@@ -146,19 +167,20 @@ def validate_files(ref_path, pred_path):
     # Запуск валидации
     results = calculate_metrics(ref_samples, pred_samples, WINDOW_SAMPLES)
     
-    # Вывод результатов
-    print("\n" + "=" * 60)
-    print("РЕЗУЛЬТАТЫ ВАЛИДАЦИИ АЛГОРИТМА ДЕТЕКЦИИ R-ЗУБЦОВ")
-    print("=" * 60)
-    print(f"{'Метрика':<25} {'Значение':<15} {'Процент':<15}")
-    print("-" * 60)
-    print(f"{'Всего референсных ударов:':<25} {len(ref_samples):<15}")
-    print(f"{'Всего обнаружено алгоритмом:':<25} {len(pred_samples):<15}")
-    print("-" * 60)
-    print(f"{'Верно обнаружено (TP):':<25} {results['tp']:<15} {results['tp']/len(ref_samples)*100:>14.2f}%")
-    print(f"{'Ложно-положительные (FP):':<25} {results['fp']:<15} {results['fp']/len(pred_samples)*100:>14.2f}%")
-    print(f"{'Ложно-отрицательные (FN):':<25} {results['fn']:<15} {results['fn']/len(ref_samples)*100:>14.2f}%")
-    print("-" * 60)
+    # Формируем строки с результатами
+    output_lines = []
+    output_lines.append("=" * 60)
+    output_lines.append("РЕЗУЛЬТАТЫ ВАЛИДАЦИИ АЛГОРИТМА ДЕТЕКЦИИ R-ЗУБЦОВ")
+    output_lines.append("=" * 60)
+    output_lines.append(f"{'Метрика':<25} {'Значение':<15} {'Процент':<15}")
+    output_lines.append("-" * 60)
+    output_lines.append(f"{'Всего референсных ударов:':<25} {len(ref_samples):<15}")
+    output_lines.append(f"{'Всего обнаружено алгоритмом:':<25} {len(pred_samples):<15}")
+    output_lines.append("-" * 60)
+    output_lines.append(f"{'Верно обнаружено (TP):':<25} {results['tp']:<15} {results['tp']/len(ref_samples)*100:>14.2f}%")
+    output_lines.append(f"{'Ложно-положительные (FP):':<25} {results['fp']:<15} {results['fp']/len(pred_samples)*100:>14.2f}%")
+    output_lines.append(f"{'Ложно-отрицательные (FN):':<25} {results['fn']:<15} {results['fn']/len(ref_samples)*100:>14.2f}%")
+    output_lines.append("-" * 60)
     
     # Вычисляем основные метрики
     precision = results['tp'] / (results['tp'] + results['fp']) if (results['tp'] + results['fp']) > 0 else 0
@@ -166,17 +188,17 @@ def validate_files(ref_path, pred_path):
     f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0
     accuracy = results['tp'] / len(ref_samples)  # Sensitivity/Recall
     
-    print(f"{'Точность (Precision):':<25} {precision:.4f}     {precision*100:>14.2f}%")
-    print(f"{'Полнота (Recall/Sensitivity):':<25} {recall:.4f}     {recall*100:>14.2f}%")
-    print(f"{'F1-мера:':<25} {f1:.4f}     {f1*100:>14.2f}%")
-    print(f"{'Accuracy:':<25} {accuracy:.4f}     {accuracy*100:>14.2f}%")
-    print("=" * 60)
+    output_lines.append(f"{'Точность (Precision):':<25} {precision:.4f}     {precision*100:>14.2f}%")
+    output_lines.append(f"{'Полнота (Recall/Sensitivity):':<25} {recall:.4f}     {recall*100:>14.2f}%")
+    output_lines.append(f"{'F1-мера:':<25} {f1:.4f}     {f1*100:>14.2f}%")
+    output_lines.append(f"{'Accuracy:':<25} {accuracy:.4f}     {accuracy*100:>14.2f}%")
+    output_lines.append("=" * 60)
     
     # Анализ ошибок по типам ударов
     if results['fn'] > 0:
-        print("\n" + "=" * 60)
-        print("АНАЛИЗ ПРОПУЩЕННЫХ УДАРОВ (FN) ПО ТИПАМ")
-        print("=" * 60)
+        output_lines.append("\n" + "=" * 60)
+        output_lines.append("АНАЛИЗ ПРОПУЩЕННЫХ УДАРОВ (FN) ПО ТИПАМ")
+        output_lines.append("=" * 60)
         
         # Определяем, какие референсы были пропущены
         missed_types = {}
@@ -187,24 +209,24 @@ def validate_files(ref_path, pred_path):
             if not results['used_ref'][i]:
                 missed_types[symbol] = missed_types.get(symbol, 0) + 1
         
-        print(f"{'Тип':<10} {'Пропущено':<12} {'Всего':<12} {'Процент':<12}")
-        print("-" * 60)
+        output_lines.append(f"{'Тип':<10} {'Пропущено':<12} {'Всего':<12} {'Процент':<12}")
+        output_lines.append("-" * 60)
         for symbol in sorted(missed_types.keys()):
             missed = missed_types[symbol]
             total = total_by_type[symbol]
             percentage = (missed / total * 100) if total > 0 else 0
-            print(f"{symbol:<10} {missed:<12} {total:<12} {percentage:>11.1f}%")
+            output_lines.append(f"{symbol:<10} {missed:<12} {total:<12} {percentage:>11.1f}%")
         
         # Особое внимание на желудочковые экстрасистолы (V)
         if 'V' in missed_types:
-            print(f"\nВНИМАНИЕ: Пропущено {missed_types['V']} желудочковых экстрасистол (тип V)")
-            print("   Это критично для диагностики аритмий!")
+            output_lines.append(f"\nВНИМАНИЕ: Пропущено {missed_types['V']} желудочковых экстрасистол (тип V)")
+            output_lines.append("   Это критично для диагностики аритмий!")
     
     # Анализ ложных срабатываний
     if results['fp'] > 0:
-        print("\n" + "=" * 60)
-        print("АНАЛИЗ ЛОЖНЫХ СРАБАТЫВАНИЙ (FP)")
-        print("=" * 60)
+        output_lines.append("\n" + "=" * 60)
+        output_lines.append("АНАЛИЗ ЛОЖНЫХ СРАБАТЫВАНИЙ (FP)")
+        output_lines.append("=" * 60)
         
         # Находим ближайшие референсы к ложным срабатываниям
         fp_analysis = []
@@ -222,108 +244,138 @@ def validate_files(ref_path, pred_path):
         # Сортируем по расстоянию до ближайшего референса
         fp_analysis.sort(key=lambda x: x[2])
         
-        print(f"Всего ложных срабатываний: {results['fp']}")
-        print("\nТоп-10 ложных срабатываний (по расстоянию до ближайшего референса):")
-        print(f"{'N':<5} {'Предсказание':<15} {'Ближайший референс':<20} {'Расстояние':<12}")
-        print("-" * 60)
+        output_lines.append(f"Всего ложных срабатываний: {results['fp']}")
+        output_lines.append("\nТоп-10 ложных срабатываний (по расстоянию до ближайшего референса):")
+        output_lines.append(f"{'N':<5} {'Предсказание':<15} {'Ближайший референс':<20} {'Расстояние':<12}")
+        output_lines.append("-" * 60)
         for i, (pred, ref, dist) in enumerate(fp_analysis[:10], 1):
-            print(f"{i:<5} {pred:<15} {ref:<20} {dist:<12}")
+            output_lines.append(f"{i:<5} {pred:<15} {ref:<20} {dist:<12}")
         
         if results['fp'] > 20:
-            print("\nВНИМАНИЕ: Много ложных срабатываний! Возможные причины:")
-            print("   - Алгоритм путает T-зубцы с R-зубцами")
-            print("   - Шумовые выбросы на ЭКГ")
-            print("   - Слишком низкий порог детекции")
+            output_lines.append("\nВНИМАНИЕ: Много ложных срабатываний! Возможные причины:")
+            output_lines.append("   - Алгоритм путает T-зубцы с R-зубцами")
+            output_lines.append("   - Шумовые выбросы на ЭКГ")
+            output_lines.append("   - Слишком низкий порог детекции")
     
     # Статистика распределения типов
-    print("\n" + "=" * 60)
-    print("СТАТИСТИКА РАСПРЕДЕЛЕНИЯ ТИПОВ УДАРОВ")
-    print("=" * 60)
+    output_lines.append("\n" + "=" * 60)
+    output_lines.append("СТАТИСТИКА РАСПРЕДЕЛЕНИЯ ТИПОВ УДАРОВ")
+    output_lines.append("=" * 60)
     
     type_counts = {}
     for symbol in ref_symbols:
         type_counts[symbol] = type_counts.get(symbol, 0) + 1
     
-    print(f"{'Тип':<10} {'Количество':<15} {'Процент':<15}")
-    print("-" * 60)
+    output_lines.append(f"{'Тип':<10} {'Количество':<15} {'Процент':<15}")
+    output_lines.append("-" * 60)
     for symbol in sorted(type_counts.keys()):
         count = type_counts[symbol]
         percentage = (count / len(ref_symbols) * 100)
-        print(f"{symbol:<10} {count:<15} {percentage:>14.1f}%")
+        output_lines.append(f"{symbol:<10} {count:<15} {percentage:>14.1f}%")
     
     # Интерпретация результатов
-    print("\n" + "=" * 60)
-    print("ИНТЕРПРЕТАЦИЯ РЕЗУЛЬТАТОВ")
-    print("=" * 60)
+    output_lines.append("\n" + "=" * 60)
+    output_lines.append("ИНТЕРПРЕТАЦИЯ РЕЗУЛЬТАТОВ")
+    output_lines.append("=" * 60)
     
     if f1 >= 0.99:
-        print("Отлично! Алгоритм показывает выдающиеся результаты (F1 >= 0.99)")
+        output_lines.append("Отлично! Алгоритм показывает выдающиеся результаты (F1 >= 0.99)")
     elif f1 >= 0.95:
-        print("Хорошо! Алгоритм показывает высокое качество детекции (F1 >= 0.95)")
+        output_lines.append("Хорошо! Алгоритм показывает высокое качество детекции (F1 >= 0.95)")
     elif f1 >= 0.90:
-        print("Удовлетворительно. Алгоритм требует доработки (F1 >= 0.90)")
+        output_lines.append("Удовлетворительно. Алгоритм требует доработки (F1 >= 0.90)")
     else:
-        print("Плохо. Алгоритм требует значительной доработки (F1 < 0.90)")
+        output_lines.append("Плохо. Алгоритм требует значительной доработки (F1 < 0.90)")
     
     if results['fp'] > results['fn']:
-        print("   - Преобладают ложные срабатывания (FP > FN)")
-        print("     Рекомендация: повысить порог детекции")
+        output_lines.append("   - Преобладают ложные срабатывания (FP > FN)")
+        output_lines.append("     Рекомендация: повысить порог детекции")
     elif results['fn'] > results['fp']:
-        print("   - Преобладают пропуски ударов (FN > FP)")
-        print("     Рекомендация: понизить порог детекции")
+        output_lines.append("   - Преобладают пропуски ударов (FN > FP)")
+        output_lines.append("     Рекомендация: понизить порог детекции")
     else:
-        print("   - Баланс между ложными срабатываниями и пропусками")
+        output_lines.append("   - Баланс между ложными срабатываниями и пропусками")
     
-    print("=" * 60)
-    print("\nВалидация завершена!")
+    output_lines.append("=" * 60)
+    output_lines.append("\nВалидация завершена!")
+    
+    # Выводим результаты на экран
+    for line in output_lines:
+        print(line)
+    
+    # Сохраняем в файл, если указан
+    if output_file:
+        try:
+            # Создаем директорию для выходного файла, если её нет
+            output_dir = Path(output_file).parent
+            if output_dir and not output_dir.exists():
+                output_dir.mkdir(parents=True, exist_ok=True)
+            
+            with open(output_file, 'w', encoding='utf-8') as f:
+                for line in output_lines:
+                    f.write(line + '\n')
+            print(f"\nРезультаты сохранены в файл: {output_file}")
+        except Exception as e:
+            print(f"\nОШИБКА при сохранении файла: {e}")
+            return False
+    
     return True
 
 def main():
     """
-    Главная функция с консольным вводом путей к файлам
+    Главная функция с парсингом аргументов командной строки
     """
+    parser = argparse.ArgumentParser(
+        description='Валидация алгоритма детекции R-зубцов на ЭКГ',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+Примеры использования:
+  py WFDB.py DATA/DATABASES/MIH-BIN/100annotations.txt DATA/DETECTED-PEAKS/MIH-BIN-PEAKS/100_peaks.txt DATA/RESULTS/100_results.txt
+  py WFDB.py -r ref.txt -p pred.txt -o results.txt
+  py WFDB.py ref.txt pred.txt  # без сохранения в файл
+        '''
+    )
+    
+    # Позиционные аргументы
+    parser.add_argument('ref_file', 
+                        help='Путь к файлу референсных аннотаций')
+    parser.add_argument('pred_file', 
+                        help='Путь к файлу с предсказаниями алгоритма')
+    parser.add_argument('output_file', nargs='?', default=None,
+                        help='Путь к файлу для сохранения результатов (опционально)')
+    
+    # Дополнительные опции
+    parser.add_argument('-r', '--ref', dest='ref_alt',
+                        help='Альтернативный путь к файлу референса')
+    parser.add_argument('-p', '--pred', dest='pred_alt',
+                        help='Альтернативный путь к файлу предсказаний')
+    parser.add_argument('-o', '--output', dest='output_alt',
+                        help='Альтернативный путь к файлу результатов')
+    
+    args = parser.parse_args()
+    
+    # Определяем пути к файлам (приоритет у альтернативных опций)
+    ref_path = args.ref_alt if args.ref_alt else args.ref_file
+    pred_path = args.pred_alt if args.pred_alt else args.pred_file
+    output_path = args.output_alt if args.output_alt else args.output_file
+    
     print("=" * 60)
     print("ВАЛИДАЦИЯ АЛГОРИТМА ДЕТЕКЦИИ R-ЗУБЦОВ")
     print("=" * 60)
-    
-    # Запрос путей к файлам
-    print("\nВведите пути к файлам:")
-    
-    # Путь к файлу референса
-    default_ref = "MIH-BIN/100annotations.txt"
-    ref_input = input(f"Путь к файлу референса [{default_ref}]: ").strip()
-    ref_path = ref_input if ref_input else default_ref
-    
-    # Путь к файлу предсказаний
-    default_pred = "MIH-BIN-P-RESULTS/100-peaks.csv"
-    pred_input = input(f"Путь к файлу предсказаний [{default_pred}]: ").strip()
-    pred_path = pred_input if pred_input else default_pred
-    
+    print(f"\nФайл референса:     {ref_path}")
+    print(f"Файл предсказаний:  {pred_path}")
+    if output_path:
+        print(f"Файл результатов:   {output_path}")
     print("\n" + "-" * 60)
     
     # Запуск валидации
-    success = validate_files(ref_path, pred_path)
+    success = validate_files(ref_path, pred_path, output_path)
     
     if not success:
         print("\nВалидация не выполнена из-за ошибок.")
-        return
+        sys.exit(1)
     
-    # Предложение сохранить результаты
-    save = input("\nСохранить результаты в файл? (y/n): ").strip().lower()
-    if save == 'y' or save == 'yes':
-        timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-        output_file = f"validation_results_{timestamp}.txt"
-        
-        # Перенаправление вывода в файл (упрощенный вариант)
-        import sys
-        original_stdout = sys.stdout
-        with open(output_file, 'w', encoding='utf-8') as f:
-            sys.stdout = f
-            # Повторный запуск валидации с выводом в файл
-            validate_files(ref_path, pred_path)
-        sys.stdout = original_stdout
-        
-        print(f"Результаты сохранены в файл: {output_file}")
+    sys.exit(0)
 
 if __name__ == "__main__":
     main()

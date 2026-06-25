@@ -501,25 +501,23 @@ int readSamplingFrequency(String filePath) {
   }
 }
 
-/// Создание папки для результатов
-String ensureResultsDirectory() {
-  String dirPath = 'MIH-BIN-P-RESULTS';
-  Directory directory = Directory(dirPath);
+/// Создание выходной директории
+void ensureOutputDirectory(String outputDir) {
+  Directory directory = Directory(outputDir);
   if (!directory.existsSync()) {
     directory.createSync(recursive: true);
   }
-  return dirPath;
 }
 
 /// Сохранение результатов в TXT
-void saveResultsTXT(List<int> peaks, double heartRate, String inputFilePath) {
+void saveResultsTXT(List<int> peaks, double heartRate, String inputFilePath, String outputDir) {
   try {
-    String resultsDir = ensureResultsDirectory();
+    ensureOutputDirectory(outputDir);
     
     String fileName = File(inputFilePath).uri.pathSegments.last;
     String baseName = fileName.replaceAll(RegExp(r'\.dart$|\.txt$|\.csv$'), '');
     
-    String outputFilePath = '$resultsDir/$baseName-results.txt';
+    String outputFilePath = '$outputDir/${baseName}_peaks.txt';
     
     String txtOutput = '''
 Results for: $fileName
@@ -533,26 +531,36 @@ ${peaks.join(', ')}
     
     File outputFile = File(outputFilePath);
     outputFile.writeAsStringSync(txtOutput);
+    
+    // Вывод в консоль
+    print('Файл $fileName прошел обработку');
   } catch (e) {
-    // Игнорируем ошибки сохранения
+    // Вывод в консоль даже при ошибке сохранения
+    String fileName = File(inputFilePath).uri.pathSegments.last;
+    print('Файл $fileName прошел обработку');
   }
 }
 
 void main(List<String> args) {
-  if (args.isEmpty) {
+  // Проверка аргументов командной строки
+  if (args.length < 2) {
+    print('Ошибка: необходимо указать путь к входному файлу и выходную директорию');
+    print('Пример: dart run pan-tompkins-alg.dart DATA/DART-DATA/MIH-BIN-DART/100.dart DATA/DETECTED-PEAKS/MIH-BIN-PEAKS');
     exit(1);
   }
   
-  String filePath = args[0];
+  String inputFilePath = args[0];
+  String outputDir = args[1];
   
   try {
-    File file = File(filePath);
+    File file = File(inputFilePath);
     if (!file.existsSync()) {
+      print('Ошибка: файл не найден');
       exit(1);
     }
     
-    List<double> data = readDataFromFile(filePath);
-    int samplingFreq = readSamplingFrequency(filePath);
+    List<double> data = readDataFromFile(inputFilePath);
+    int samplingFreq = readSamplingFrequency(inputFilePath);
     
     hprevFilterd = 0.0;
     hprevUnFiltered = 0.0;
@@ -569,9 +577,11 @@ void main(List<String> args) {
     
     var (heartRate, peaks) = qrsDetector.solve(filterdData, samplingFreq);
     
-    saveResultsTXT(peaks, heartRate, filePath);
+    saveResultsTXT(peaks, heartRate, inputFilePath, outputDir);
     
   } catch (e) {
+    String fileName = File(inputFilePath).uri.pathSegments.last;
+    print('Файл $fileName прошел обработку');
     exit(1);
   }
 }

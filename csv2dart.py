@@ -5,6 +5,9 @@ import time
 import multiprocessing
 import numpy as np
 
+# Доступные базы данных
+AVAILABLE_DATABASES = ["MIH-BIN", "AHA", "NSTDB"]
+
 def convert_csv_to_dart(csv_filename, dart_filename, sampling_freq):
     """
     Конвертирует CSV файл с данными ECG в формат, аналогичный data.dart
@@ -78,20 +81,48 @@ def process_file_wrapper(args):
     except Exception as e:
         return (Path(csv_file).name, False, 0, str(e))
 
+def select_database():
+    """Выбор базы данных"""
+    print("Доступные базы данных:")
+    for i, db in enumerate(AVAILABLE_DATABASES, 1):
+        print(f"  {i}. {db}")
+    
+    while True:
+        choice = input("\nВведите название базы данных или номер: ").strip()
+        
+        # Проверка по номеру
+        if choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(AVAILABLE_DATABASES):
+                return AVAILABLE_DATABASES[idx]
+        
+        # Проверка по названию (регистронезависимо)
+        for db in AVAILABLE_DATABASES:
+            if choice.upper() == db.upper():
+                return db
+        
+        print(f"Ошибка: база данных '{choice}' не найдена")
+        print("Доступные базы:", ", ".join(AVAILABLE_DATABASES))
+
 def main():
     """Основная функция"""
     script_dir = Path(__file__).parent
     
-    input_dir = script_dir / "MIH-BIN"
-    output_dir = script_dir / "MIH-BIN-DART"
+    # Выбор базы данных
+    database = select_database()
+    
+    # Формируем пути на основе выбранной базы
+    input_dir = script_dir / "DATA" / "DATABASES" / database
+    output_dir = script_dir / "DATA" / "DART-DATA" / f"{database}-DART"
     
     if not input_dir.exists():
         print(f"Ошибка: Папка {input_dir} не найдена")
+        print(f"Убедитесь, что база данных '{database}' существует в папке DATA/DATABASES/")
         return
     
     # Запрашиваем частоту дискретизации
     while True:
-        freq_input = input("Введите частоту дискретизации (Гц): ").strip()
+        freq_input = input("\nВведите частоту дискретизации (Гц): ").strip()
         try:
             sampling_freq = int(freq_input)
             if sampling_freq <= 0:
@@ -127,6 +158,8 @@ def main():
     
     results = []
     completed = 0
+    successful = 0
+    failed = 0
     
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(process_file_wrapper, args) for args in process_args]
@@ -136,15 +169,31 @@ def main():
             results.append(result)
             completed += 1
             
+            if result[1]:  # успешно
+                successful += 1
+            else:
+                failed += 1
+            
             elapsed = time.time() - start_time
             if completed > 0:
                 avg_time = elapsed / completed
                 remaining = (total_files - completed) * avg_time
-                print(f"\rКонвертация данных: обработано {completed} из {total_files} файлов, осталось ~{remaining:.1f} сек", end="")
+                print(f"\rКонвертация данных: обработано {completed} из {total_files} файлов, "
+                      f"успешно: {successful}, ошибок: {failed}, осталось ~{remaining:.1f} сек", end="")
     
     print()
     print()
-    print(f"Файлы успешно конвертированы, папка сохранения: {output_dir}")
+    
+    # Вывод статистики ошибок
+    if failed > 0:
+        print("Ошибки при обработке файлов:")
+        for filename, success, _, error in results:
+            if not success:
+                print(f"  - {filename}: {error}")
+    
+    total_time = time.time() - start_time
+    print(f"\nОбработка завершена!")
+    print(f"Файлы сохранены в: {output_dir}")
 
 if __name__ == "__main__":
     main()
