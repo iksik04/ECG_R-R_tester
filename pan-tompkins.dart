@@ -1,6 +1,6 @@
 import 'dart:math';
-//import 'data.dart';
-import 'MIH-BIN-DART/102.dart';
+import 'data.dart';
+
 
 List<double> convolution(List<double> signal) {
   List<double> sig1 = [...signal];

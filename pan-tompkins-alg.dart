@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'dart:math';
- 
 
 class PanTompkinsQRS {
   List<double> bandPassFilter(List<double> signal) {
@@ -496,66 +495,65 @@ int readSamplingFrequency(String filePath) {
       return int.parse(freqMatch.group(1)!);
     }
     
-    return 250; // значение по умолчанию
+    return 250;
   } catch (e) {
     return 250;
   }
 }
 
-/// Сохранение результатов в CSV
-void savePeaksToCSV(List<int> peaks, String inputFilePath) {
+/// Создание папки для результатов
+String ensureResultsDirectory() {
+  String dirPath = 'MIH-BIN-P-RESULTS';
+  Directory directory = Directory(dirPath);
+  if (!directory.existsSync()) {
+    directory.createSync(recursive: true);
+  }
+  return dirPath;
+}
+
+/// Сохранение результатов в TXT
+void saveResultsTXT(List<int> peaks, double heartRate, String inputFilePath) {
   try {
-    // Создаем имя выходного файла
-    String baseName = inputFilePath.replaceAll(RegExp(r'\.dart$|\.txt$'), '');
-    String outputFilePath = '$baseName-peaks.csv';
+    String resultsDir = ensureResultsDirectory();
     
-    // Записываем CSV
-    StringBuffer csv = StringBuffer();
-    csv.writeln('peak_index');
+    String fileName = File(inputFilePath).uri.pathSegments.last;
+    String baseName = fileName.replaceAll(RegExp(r'\.dart$|\.txt$|\.csv$'), '');
     
-    for (int peak in peaks) {
-      csv.writeln(peak.toString());
-    }
+    String outputFilePath = '$resultsDir/$baseName-results.txt';
+    
+    String txtOutput = '''
+Results for: $fileName
+========================================
+Total Peaks Detected: ${peaks.length}
+Heart Rate: ${heartRate.toStringAsFixed(2)} BPM
+========================================
+Peak indices (${peaks.length} peaks):
+${peaks.join(', ')}
+''';
     
     File outputFile = File(outputFilePath);
-    outputFile.writeAsStringSync(csv.toString());
-    
-    print('Peaks saved to: $outputFilePath');
-    print('Total peaks: ${peaks.length}');
+    outputFile.writeAsStringSync(txtOutput);
   } catch (e) {
-    print('Error saving CSV: $e');
+    // Игнорируем ошибки сохранения
   }
 }
 
 void main(List<String> args) {
-  // Проверяем аргументы командной строки
   if (args.isEmpty) {
-    print('Usage: dart program.dart <path_to_data_file>');
-    print('Example: dart program.dart "C:/data/ecg_data.dart"');
     exit(1);
   }
   
   String filePath = args[0];
   
   try {
-    // Проверяем существование файла
     File file = File(filePath);
     if (!file.existsSync()) {
-      print('Error: File not found: $filePath');
       exit(1);
     }
     
-    print('Reading data from: $filePath');
-    
-    // Читаем данные
     List<double> data = readDataFromFile(filePath);
-    print('Loaded ${data.length} samples');
-    
-    // Читаем частоту дискретизации
     int samplingFreq = readSamplingFrequency(filePath);
-    print('Sampling frequency: $samplingFreq Hz');
     
-    // Сбрасываем состояния фильтров
     hprevFilterd = 0.0;
     hprevUnFiltered = 0.0;
     hprevprevUnfiltered = 0.0;
@@ -565,37 +563,15 @@ void main(List<String> args) {
     lprevprevUnfiltered = 0.0;
     lprevprevFilterd = 0.0;
     
-    // Выполняем обработку
     PanTompkinsQRS qrsDetector = PanTompkinsQRS();
     List<double> filterdData = [for (double i in data) applyHighPassFilter(i)];
     filterdData = [for (double i in filterdData) applyLowPassFilter(i)];
     
     var (heartRate, peaks) = qrsDetector.solve(filterdData, samplingFreq);
     
-    // Выводим информацию в консоль
-    print('\n=== Results ===');
-    print('Total Peaks Detected: ${peaks.length}');
-    print('Heart Rate: ${heartRate.toStringAsFixed(2)} BPM');
-    print('================\n');
-    
-    // Сохраняем пики в CSV файл
-    savePeaksToCSV(peaks, filePath);
-    
-    // Дополнительно сохраняем в TXT с информацией о ЧСС
-    String txtFilePath = '${filePath.replaceAll(RegExp(r'\.dart$|\.txt$'), '')}-results.txt';
-    File txtFile = File(txtFilePath);
-    String txtOutput = '''
-Results for: $filePath
-========================================
-Total Peaks Detected: ${peaks.length}
-Heart Rate: ${heartRate.toStringAsFixed(2)} BPM
-Peak indices: ${peaks.join(', ')}
-''';
-    txtFile.writeAsStringSync(txtOutput);
-    print('Full results saved to: $txtFilePath');
+    saveResultsTXT(peaks, heartRate, filePath);
     
   } catch (e) {
-    print('Error: $e');
     exit(1);
   }
 }
