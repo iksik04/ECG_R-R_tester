@@ -32,25 +32,26 @@ timeout /t 2 >nul
 goto menu
 
 :run
+set project_root=%~dp0
 
-set input_dir=DATA\DATABASES\%db_name%
-set dart_dir=DATA\DART-DATA\%db_name%-DART
-set peaks_dir=DATA\DETECTED-PEAKS\%db_name%-PEAKS
-set res_dir=DATA\RESULTS\%db_name%-RESULTS
-set ann_dir=DATA\DATABASES\%db_name%
+set input_dir=%project_root%DATA\DATABASES\%db_name%
+set dart_dir=%project_root%DATA\DART-DATA\%db_name%-DART
+set peaks_dir=%project_root%DATA\DETECTED-PEAKS\%db_name%-PEAKS
+set res_dir=%project_root%DATA\RESULTS\%db_name%-RESULTS
+set ann_dir=%project_root%DATA\DATABASES\%db_name%
 
-python csv2dart.py "%input_dir%" "%dart_dir%" --sampling-freq 360
+python %project_root%sys\csv2dart.py "%input_dir%" "%dart_dir%" --sampling-freq 360
 
 for %%f in ("%dart_dir%\*.dart") do (
     echo =================
     echo Обработка: %%~nxf
-    cmd /c dart run pan-tompkins-alg.dart "%%f" "%peaks_dir%"
+    cmd /c dart run %project_root%algs\pan-tompkins-alg.dart "%%f" "%peaks_dir%"
     if errorlevel 1 (
         echo Ошибка: Dart для файла %%~nxf
     ) else (
         echo Файл %%~nf прошел обработку алгоритмом
     )
-    cmd /c python WFDB.py "%ann_dir%\%%~nfannotations.txt" "%peaks_dir%\%%~nf_peaks.txt" "%res_dir%\%%~nf_results.txt"
+    cmd /c python %project_root%sys\WFDB.py "%ann_dir%\%%~nfannotations.txt" "%peaks_dir%\%%~nf_peaks.txt" "%res_dir%\%%~nf_results.txt"
     if errorlevel 1 (
         echo Ошибка: Python для файла %%~nxf
     ) else (
