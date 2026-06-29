@@ -13,7 +13,6 @@ def load_reference_annotations(filepath):
     samples = []
     symbols = []
     
-    print(f"Загрузка референсных аннотаций из: {filepath}")
     with open(filepath, 'r') as f:
         for line in f:
             parts = line.split()
@@ -35,15 +34,12 @@ def load_reference_annotations(filepath):
             samples.append(sample)
             symbols.append(symbol)
     
-    print(f"  Загружено референсных меток: {len(samples)}")
     return samples, symbols
 
 def load_predictions(filepath):
     """
     Загрузка предсказаний алгоритма из CSV или TXT файла
     """
-    print(f"Загрузка предсказаний алгоритма из: {filepath}")
-    
     # Определяем формат файла по расширению
     file_ext = Path(filepath).suffix.lower()
     
@@ -72,7 +68,6 @@ def load_predictions(filepath):
                     except ValueError:
                         continue
     
-    print(f"  Загружено предсказаний алгоритма: {len(samples)}")
     return samples
 
 def calculate_metrics(ref, pred, window):
@@ -144,11 +139,9 @@ def validate_files(ref_path, pred_path, output_file=None):
     """
     # Проверка существования файлов
     if not os.path.exists(ref_path):
-        print(f"ОШИБКА: Файл референса не найден: {ref_path}")
         return False
     
     if not os.path.exists(pred_path):
-        print(f"ОШИБКА: Файл предсказаний не найден: {pred_path}")
         return False
     
     # Загрузка данных
@@ -159,10 +152,6 @@ def validate_files(ref_path, pred_path, output_file=None):
     FS = 360  # Гц (частота дискретизации для MIT-BIH)
     WINDOW_MS = 150  # миллисекунд
     WINDOW_SAMPLES = int(FS * WINDOW_MS / 1000)
-    
-    print(f"\nПараметры валидации:")
-    print(f"  Частота дискретизации: {FS} Гц")
-    print(f"  Окно поиска: {WINDOW_MS} мс = {WINDOW_SAMPLES} сэмплов")
     
     # Запуск валидации
     results = calculate_metrics(ref_samples, pred_samples, WINDOW_SAMPLES)
@@ -299,10 +288,6 @@ def validate_files(ref_path, pred_path, output_file=None):
     output_lines.append("=" * 60)
     output_lines.append("\nВалидация завершена!")
     
-    # Выводим результаты на экран
-    for line in output_lines:
-        print(line)
-    
     # Сохраняем в файл, если указан
     if output_file:
         try:
@@ -314,9 +299,7 @@ def validate_files(ref_path, pred_path, output_file=None):
             with open(output_file, 'w', encoding='utf-8') as f:
                 for line in output_lines:
                     f.write(line + '\n')
-            print(f"\nРезультаты сохранены в файл: {output_file}")
         except Exception as e:
-            print(f"\nОШИБКА при сохранении файла: {e}")
             return False
     
     return True
@@ -359,20 +342,10 @@ def main():
     pred_path = args.pred_alt if args.pred_alt else args.pred_file
     output_path = args.output_alt if args.output_alt else args.output_file
     
-    print("=" * 60)
-    print("ВАЛИДАЦИЯ АЛГОРИТМА ДЕТЕКЦИИ R-ЗУБЦОВ")
-    print("=" * 60)
-    print(f"\nФайл референса:     {ref_path}")
-    print(f"Файл предсказаний:  {pred_path}")
-    if output_path:
-        print(f"Файл результатов:   {output_path}")
-    print("\n" + "-" * 60)
-    
     # Запуск валидации
     success = validate_files(ref_path, pred_path, output_path)
     
     if not success:
-        print("\nВалидация не выполнена из-за ошибок.")
         sys.exit(1)
     
     sys.exit(0)
