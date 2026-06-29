@@ -4,7 +4,6 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import time
 import multiprocessing
 import numpy as np
-import sys
 import argparse
 
 def convert_csv_to_dart(csv_filename, dart_filename, sampling_freq):

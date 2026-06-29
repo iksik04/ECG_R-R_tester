@@ -7,14 +7,14 @@ cls
 echo ==============================
 echo   Выберите базу данных:
 echo ==============================
-echo   1 - MIH-BIN
+echo   1 - MIT-BIH
 echo   2 - AHA
 echo   3 - NSTDB
 echo ==============================
 set /p choice="Введите номер (1-3): "
 
 if "%choice%"=="1" (
-    set db_name=MIH-BIN
+    set db_name=MIT-BIH
     goto run
 )
 if "%choice%"=="2" (
