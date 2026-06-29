@@ -32,12 +32,14 @@ timeout /t 2 >nul
 goto menu
 
 :run
-python csv2dart.py "%db_name%"
 
+set input_dir=DATA\DATABASES\%db_name%
 set dart_dir=DATA\DART-DATA\%db_name%-DART
 set peaks_dir=DATA\DETECTED-PEAKS\%db_name%-PEAKS
 set res_dir=DATA\RESULTS\%db_name%-RESULTS
 set ann_dir=DATA\DATABASES\%db_name%
+
+python csv2dart.py "%input_dir%" "%dart_dir%" --sampling-freq 360
 
 for %%f in ("%dart_dir%\*.dart") do (
     echo =================

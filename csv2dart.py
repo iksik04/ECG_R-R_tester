@@ -5,9 +5,7 @@ import time
 import multiprocessing
 import numpy as np
 import sys
-
-# Доступные базы данных
-AVAILABLE_DATABASES = ["MIH-BIN", "AHA", "NSTDB"]
+import argparse
 
 def convert_csv_to_dart(csv_filename, dart_filename, sampling_freq):
     """
@@ -84,49 +82,43 @@ def process_file_wrapper(args):
 
 def main():
     """Основная функция"""
-    # Проверка аргументов командной строки
-    if len(sys.argv) < 2:
-        print("Ошибка: не указано название базы данных")
-        print(f"Использование: python csv2dart.py <название_базы>")
-        print(f"Доступные базы: {', '.join(AVAILABLE_DATABASES)}")
-        return
+    parser = argparse.ArgumentParser(
+        description='Конвертирует CSV файлы с ECG данными в Dart формат'
+    )
+    parser.add_argument(
+        'input_dir',
+        help='Путь к директории с CSV файлами для конвертации'
+    )
+    parser.add_argument(
+        'output_dir',
+        help='Путь к директории, куда сохранять сконвертированные .dart файлы'
+    )
+    parser.add_argument(
+        '--sampling-freq', '-f',
+        type=int,
+        required=True,
+        help='Частота дискретизации в Гц'
+    )
+    parser.add_argument(
+        '--workers', '-w',
+        type=int,
+        default=None,
+        help='Количество параллельных процессов (по умолчанию: количество ядер CPU)'
+    )
     
-    database = sys.argv[1].upper()
+    args = parser.parse_args()
     
-    # Проверка, существует ли указанная база данных
-    if database not in [db.upper() for db in AVAILABLE_DATABASES]:
-        print(f"Ошибка: база данных '{database}' не найдена")
-        print(f"Доступные базы: {', '.join(AVAILABLE_DATABASES)}")
-        return
+    input_dir = Path(args.input_dir)
+    output_dir = Path(args.output_dir)
     
-    # Находим правильное название базы (с правильным регистром)
-    for db in AVAILABLE_DATABASES:
-        if db.upper() == database:
-            database = db
-            break
-    
-    script_dir = Path(__file__).parent
-    
-    # Формируем пути на основе выбранной базы
-    input_dir = script_dir / "DATA" / "DATABASES" / database
-    output_dir = script_dir / "DATA" / "DART-DATA" / f"{database}-DART"
-    
+    # Проверяем существование входной директории
     if not input_dir.exists():
         print(f"Ошибка: Папка {input_dir} не найдена")
-        print(f"Убедитесь, что база данных '{database}' существует в папке DATA/DATABASES/")
         return
     
-    # Запрашиваем частоту дискретизации
-    while True:
-        freq_input = input("\nВведите частоту дискретизации (Гц): ").strip()
-        try:
-            sampling_freq = int(freq_input)
-            if sampling_freq <= 0:
-                print("Частота должна быть положительным числом")
-                continue
-            break
-        except ValueError:
-            print("Пожалуйста, введите целое число")
+    if not input_dir.is_dir():
+        print(f"Ошибка: {input_dir} не является директорией")
+        return
     
     # Создаем выходную папку
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -139,10 +131,14 @@ def main():
         return
     
     total_files = len(csv_files)
+    sampling_freq = args.sampling_freq
     
     # Определяем количество процессов
     cpu_count = multiprocessing.cpu_count()
-    max_workers = min(cpu_count * 2, total_files)
+    if args.workers:
+        max_workers = min(args.workers, total_files)
+    else:
+        max_workers = min(cpu_count * 2, total_files)
     
     start_time = time.time()
     
@@ -156,6 +152,7 @@ def main():
     completed = 0
     successful = 0
     failed = 0
+    error_messages = []
     
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(process_file_wrapper, args) for args in process_args]
@@ -169,25 +166,22 @@ def main():
                 successful += 1
             else:
                 failed += 1
+                if result[3]:
+                    error_messages.append(f"  - {result[0]}: {result[3]}")
             
             elapsed = time.time() - start_time
             if completed > 0:
                 avg_time = elapsed / completed
                 remaining = (total_files - completed) * avg_time
-                print(f"\rКонвертация данных: обработано {completed} из {total_files} файлов, "
-                      f"успешно: {successful}, ошибок: {failed}, осталось ~{remaining:.1f} сек", end="")
+                print(f"\rКонвертация: {completed}/{total_files} | OK: {successful} | ERR: {failed} | ~{remaining:.0f}с", end="")
     
     print()
-    print()
     
-    # Вывод статистики ошибок
+    # Вывод ошибок если они были
     if failed > 0:
-        print("Ошибки при обработке файлов:")
-        for filename, success, _, error in results:
-            if not success:
-                print(f"  - {filename}: {error}")
-    
-    total_time = time.time() - start_time
+        print("\nОшибки:")
+        for error in error_messages:
+            print(error)
 
 if __name__ == "__main__":
     main()
