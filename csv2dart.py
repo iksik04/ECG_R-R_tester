@@ -4,6 +4,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 import time
 import multiprocessing
 import numpy as np
+import sys
 
 # Доступные базы данных
 AVAILABLE_DATABASES = ["MIH-BIN", "AHA", "NSTDB"]
@@ -81,35 +82,30 @@ def process_file_wrapper(args):
     except Exception as e:
         return (Path(csv_file).name, False, 0, str(e))
 
-def select_database():
-    """Выбор базы данных"""
-    print("Доступные базы данных:")
-    for i, db in enumerate(AVAILABLE_DATABASES, 1):
-        print(f"  {i}. {db}")
-    
-    while True:
-        choice = input("\nВведите название базы данных или номер: ").strip()
-        
-        # Проверка по номеру
-        if choice.isdigit():
-            idx = int(choice) - 1
-            if 0 <= idx < len(AVAILABLE_DATABASES):
-                return AVAILABLE_DATABASES[idx]
-        
-        # Проверка по названию (регистронезависимо)
-        for db in AVAILABLE_DATABASES:
-            if choice.upper() == db.upper():
-                return db
-        
-        print(f"Ошибка: база данных '{choice}' не найдена")
-        print("Доступные базы:", ", ".join(AVAILABLE_DATABASES))
-
 def main():
     """Основная функция"""
-    script_dir = Path(__file__).parent
+    # Проверка аргументов командной строки
+    if len(sys.argv) < 2:
+        print("Ошибка: не указано название базы данных")
+        print(f"Использование: python csv2dart.py <название_базы>")
+        print(f"Доступные базы: {', '.join(AVAILABLE_DATABASES)}")
+        return
     
-    # Выбор базы данных
-    database = select_database()
+    database = sys.argv[1].upper()
+    
+    # Проверка, существует ли указанная база данных
+    if database not in [db.upper() for db in AVAILABLE_DATABASES]:
+        print(f"Ошибка: база данных '{database}' не найдена")
+        print(f"Доступные базы: {', '.join(AVAILABLE_DATABASES)}")
+        return
+    
+    # Находим правильное название базы (с правильным регистром)
+    for db in AVAILABLE_DATABASES:
+        if db.upper() == database:
+            database = db
+            break
+    
+    script_dir = Path(__file__).parent
     
     # Формируем пути на основе выбранной базы
     input_dir = script_dir / "DATA" / "DATABASES" / database
@@ -192,8 +188,6 @@ def main():
                 print(f"  - {filename}: {error}")
     
     total_time = time.time() - start_time
-    print(f"\nОбработка завершена!")
-    print(f"Файлы сохранены в: {output_dir}")
 
 if __name__ == "__main__":
     main()

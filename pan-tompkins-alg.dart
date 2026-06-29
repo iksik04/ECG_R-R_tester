@@ -533,11 +533,9 @@ ${peaks.join(', ')}
     outputFile.writeAsStringSync(txtOutput);
     
     // Вывод в консоль
-    print('Файл $fileName прошел обработку');
   } catch (e) {
     // Вывод в консоль даже при ошибке сохранения
     String fileName = File(inputFilePath).uri.pathSegments.last;
-    print('Файл $fileName прошел обработку');
   }
 }
 
@@ -581,7 +579,6 @@ void main(List<String> args) {
     
   } catch (e) {
     String fileName = File(inputFilePath).uri.pathSegments.last;
-    print('Файл $fileName прошел обработку');
     exit(1);
   }
 }
