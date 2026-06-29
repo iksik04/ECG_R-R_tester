@@ -32,38 +32,30 @@ timeout /t 2 >nul
 goto menu
 
 :run
-echo.
 python csv2dart.py "%db_name%"
-echo.
 
-:: Проверяем, существует ли папка с DART-данными
-set input_dir=DATA\DART-DATA\%db_name%-DART
-if not exist "%input_dir%" (
-    echo Ошибка: Папка %input_dir% не найдена!
-    pause
-    goto menu
-)
+set dart_dir=DATA\DART-DATA\%db_name%-DART
+set peaks_dir=DATA\DETECTED-PEAKS\%db_name%-PEAKS
+set res_dir=DATA\RESULTS\%db_name%-RESULTS
+set ann_dir=DATA\DATABASES\%db_name%
 
-:: Создаём выходную папку, если её нет
-set output_dir=DATA\DETECTED-PEAKS\%db_name%-PEAKS
-if not exist "%output_dir%" mkdir "%output_dir%"
-
-
-:: Обрабатываем каждый Dart-файл в папке
-for %%f in ("%input_dir%\*.dart") do @(
-    echo.
+for %%f in ("%dart_dir%\*.dart") do (
+    echo =================
     echo Обработка: %%~nxf
-    dart run pan-tompkins-alg.dart "%%f" "%output_dir%"
+    cmd /c dart run pan-tompkins-alg.dart "%%f" "%peaks_dir%"
     if errorlevel 1 (
-        echo Ошибка: файл %%~nxf не обработан
+        echo Ошибка: Dart для файла %%~nxf
     ) else (
-        echo Успешно: файл %%~nxf обработан
+        echo Файл %%~nf прошел обработку алгоритмом
+    )
+    cmd /c python WFDB.py "%ann_dir%\%%~nfannotations.txt" "%peaks_dir%\%%~nf_peaks.txt" "%res_dir%\%%~nf_results.txt"
+    if errorlevel 1 (
+        echo Ошибка: Python для файла %%~nxf
+    ) else (
+        echo Валидация для файла %%~nf завершена
     )
 )
 
 echo.
-echo ==============================
-echo Все файлы обработаны!
-echo Результаты в: %output_dir%
-echo ==============================
+echo Все файлы обработаны.
 pause
