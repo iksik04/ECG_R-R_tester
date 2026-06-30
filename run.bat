@@ -67,7 +67,7 @@ for %%f in ("%dart_dir%\*.dart") do (
     )
 )
 
-python %project_root%sys\WFDB.py "%input_dir%" "%peaks_dir%" "%res_dir%"
+python %project_root%sys\validation.py "%input_dir%" "%peaks_dir%" "%res_dir%"
 
 echo.
 echo Все файлы обработаны.
