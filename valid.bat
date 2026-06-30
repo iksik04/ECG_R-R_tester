@@ -40,7 +40,7 @@ set peaks_dir=%project_root%DATA\DETECTED-PEAKS\%db_name%-PEAKS
 set res_dir=%project_root%DATA\RESULTS\%db_name%-RESULTS
 set ann_dir=%project_root%DATA\DATABASES\%db_name%
 
-python %project_root%sys\csv2dart.py "%input_dir%" "%dart_dir%" --sampling-freq 360
+python %project_root%sys\dat2dart.py "%input_dir%" "%dart_dir%"
 
 for %%f in ("%dart_dir%\*.dart") do (
     echo =================
@@ -52,6 +52,8 @@ for %%f in ("%dart_dir%\*.dart") do (
         echo Файл %%~nf прошел обработку алгоритмом
     )
 )
+
+python %project_root%sys\WFDB.py "%input_dir%" "%peaks_dir%" "%res_dir%"
 
 echo.
 echo Все файлы обработаны.
