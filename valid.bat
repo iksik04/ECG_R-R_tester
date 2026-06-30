@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 chcp 65001 >nul 
 title Выбор базы данных
 
@@ -45,11 +46,24 @@ python %project_root%sys\dat2dart.py "%input_dir%" "%dart_dir%"
 for %%f in ("%dart_dir%\*.dart") do (
     echo =================
     echo Обработка: %%~nxf
-    cmd /c dart run %project_root%algs\pan-tompkins-alg.dart "%%f" "%peaks_dir%"
-    if errorlevel 1 (
-        echo Ошибка: Dart для файла %%~nxf
+    
+    set "skip=0"
+    
+    if "%db_name%"=="MIT-BIH" (
+        for %%n in (102 104 107 217) do (
+            if "%%~nf"=="%%n" set "skip=1"
+        )
+    )
+    
+    if !skip!==0 (
+        cmd /c dart run %project_root%algs\pan-tompkins-alg.dart "%%f" "%peaks_dir%"
+        if errorlevel 1 (
+            echo Ошибка: Dart для файла %%~nxf
+        ) else (
+            echo Файл %%~nf прошел обработку алгоритмом
+        )
     ) else (
-        echo Файл %%~nf прошел обработку алгоритмом
+        echo Файл %%~nf пропущен, в MIT-BIH эти записи не используются при валидации
     )
 )
 
