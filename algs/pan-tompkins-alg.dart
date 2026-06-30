@@ -501,54 +501,15 @@ int readSamplingFrequency(String filePath) {
   }
 }
 
-/// Создание выходной директории
-void ensureOutputDirectory(String outputDir) {
-  Directory directory = Directory(outputDir);
-  if (!directory.existsSync()) {
-    directory.createSync(recursive: true);
-  }
-}
-
-/// Сохранение результатов в TXT
-void saveResultsTXT(List<int> peaks, double heartRate, String inputFilePath, String outputDir) {
-  try {
-    ensureOutputDirectory(outputDir);
-    
-    String fileName = File(inputFilePath).uri.pathSegments.last;
-    String baseName = fileName.replaceAll(RegExp(r'\.dart$|\.txt$|\.csv$'), '');
-    
-    String outputFilePath = '$outputDir/${baseName}_peaks.txt';
-    
-    String txtOutput = '''
-Results for: $fileName
-========================================
-Total Peaks Detected: ${peaks.length}
-Heart Rate: ${heartRate.toStringAsFixed(2)} BPM
-========================================
-Peak indices (${peaks.length} peaks):
-${peaks.join(', ')}
-''';
-    
-    File outputFile = File(outputFilePath);
-    outputFile.writeAsStringSync(txtOutput);
-    
-    // Вывод в консоль
-  } catch (e) {
-    // Вывод в консоль даже при ошибке сохранения
-    String fileName = File(inputFilePath).uri.pathSegments.last;
-  }
-}
-
 void main(List<String> args) {
   // Проверка аргументов командной строки
-  if (args.length < 2) {
-    print('Ошибка: необходимо указать путь к входному файлу и выходную директорию');
-    print('Пример: dart run pan-tompkins-alg.dart DATA/DART-DATA/MIH-BIN-DART/100.dart DATA/DETECTED-PEAKS/MIH-BIN-PEAKS');
+  if (args.isEmpty) {
+    print('Ошибка: необходимо указать путь к входному файлу');
+    print('Пример: dart run pan-tompkins-alg.dart DATA/DART-DATA/MIH-BIN-DART/100.dart');
     exit(1);
   }
   
   String inputFilePath = args[0];
-  String outputDir = args[1];
   
   try {
     File file = File(inputFilePath);
@@ -575,10 +536,12 @@ void main(List<String> args) {
     
     var (heartRate, peaks) = qrsDetector.solve(filterdData, samplingFreq);
     
-    saveResultsTXT(peaks, heartRate, inputFilePath, outputDir);
+    // Вывод списка пиков в консоль одной строкой
+    print(peaks.join(' '));
     
   } catch (e) {
-    String fileName = File(inputFilePath).uri.pathSegments.last;
+    // В случае ошибки выводим пустую строку
+    print('');
     exit(1);
   }
 }

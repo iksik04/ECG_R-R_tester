@@ -4,6 +4,7 @@ import multiprocessing
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import time
+import sys
 
 def convert_dat_to_dart(record_name, dart_filename, physical=True):
     """
@@ -66,6 +67,29 @@ def process_file_wrapper(args):
     except Exception as e:
         return (Path(record_path).name, False, 0, str(e))
 
+def print_progress(completed, total, successful, failed, start_time):
+    """Печатает прогресс-бар на одной строке."""
+    elapsed = time.time() - start_time
+    avg_time = elapsed / completed if completed > 0 else 0
+    remaining = (total - completed) * avg_time if avg_time > 0 else 0
+    
+    # Ширина прогресс-бара
+    bar_width = 40
+    filled = int(bar_width * completed / total)
+    bar = '█' * filled + '░' * (bar_width - filled)
+    
+    # Форматируем время
+    elapsed_str = f"{elapsed:.0f}s"
+    remaining_str = f"{remaining:.0f}s" if remaining > 0 else "0s"
+    
+    # Строка прогресса
+    progress_str = (f"\r[{bar}] {completed}/{total} "
+                    f"| OK {successful} ERR {failed} "
+                    f"| ~{remaining_str} сек")
+    
+    sys.stdout.write(progress_str)
+    sys.stdout.flush()
+
 def main():
     parser = argparse.ArgumentParser(description='Конвертирует WFDB файлы (.dat/.hea) в Dart формат')
     parser.add_argument('input_dir', help='Путь к директории с файлами WFDB записей')
@@ -112,6 +136,7 @@ def main():
     successful, failed = 0, 0
     error_messages = []
 
+
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(process_file_wrapper, args) for args in process_args]
 
@@ -125,14 +150,13 @@ def main():
                     error_messages.append(f"  - {result[0]}: {result[3]}")
 
             completed = successful + failed
-            elapsed = time.time() - start_time
-            avg_time = elapsed / completed if completed > 0 else 0
-            remaining = (total_files - completed) * avg_time
-            print(f"\rКонвертация: {completed}/{total_files} | OK: {successful} | ERR: {failed} | ~{remaining:.0f}с", end="")
+            print_progress(completed, total_files, successful, failed, start_time)
 
-    print()
+    print()  # Переход на новую строку после завершения
+    
+    
     if failed > 0:
-        print("\nОшибки:")
+        print("\n❌ Ошибки:")
         for error in error_messages:
             print(error)
 
