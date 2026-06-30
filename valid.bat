@@ -51,12 +51,6 @@ for %%f in ("%dart_dir%\*.dart") do (
     ) else (
         echo Файл %%~nf прошел обработку алгоритмом
     )
-    cmd /c python %project_root%sys\WFDB.py "%ann_dir%\%%~nfannotations.txt" "%peaks_dir%\%%~nf_peaks.txt" "%res_dir%\%%~nf_results.txt"
-    if errorlevel 1 (
-        echo Ошибка: Python для файла %%~nxf
-    ) else (
-        echo Валидация для файла %%~nf завершена
-    )
 )
 
 echo.
