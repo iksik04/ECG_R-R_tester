@@ -4,20 +4,21 @@ import multiprocessing
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import time
-import sys
+from utils import print_progress
 
-def convert_dat_to_dart(record_name, dart_filename, physical=True):
+
+def convert_dat_to_dart(record_name, dart_filename):
     """
     Конвертирует WFDB запись (.dat + .hea) в Dart формат.
-    По умолчанию сохраняет физические значения (например, мВ) как double.
+    Сохраняет физические значения (например, мВ) как double.
     """
     hea_path = Path(record_name).with_suffix('.hea')
     if not hea_path.exists():
         raise FileNotFoundError(f"Файл заголовка {hea_path} не найден")
 
     try:
-        # Читаем запись. physical=True возвращает значения в мВ и т.д. [citation:6]
-        record = wfdb.rdrecord(str(record_name), physical=physical)
+        # Читаем запись. physical=True возвращает значения в мВ и т.д.
+        record = wfdb.rdrecord(str(record_name), physical=True)
     except Exception as e:
         raise RuntimeError(f"Ошибка чтения WFDB записи: {e}")
 
@@ -27,7 +28,6 @@ def convert_dat_to_dart(record_name, dart_filename, physical=True):
     # Для простоты берем первый канал (индекс 0). Можно расширить для многоканальных.
     data = record.p_signal[:, 0].flatten().tolist()
 
-    # Форматирование в стиле вашего csv2dart.py
     chunk_size = 6
     chunks = []
     for i in range(0, len(data), chunk_size):
@@ -55,40 +55,19 @@ List<double> data = [
 
     return len(data)
 
+
 def process_file_wrapper(args):
     """Обёртка для многопроцессорной обработки."""
     record_path, output_path = args
     try:
         num_points = convert_dat_to_dart(
-            record_name=str(record_path), # Передаем базовое имя без расширения
+            record_name=str(record_path),  # Передаем базовое имя без расширения
             dart_filename=str(output_path)
         )
         return (Path(record_path).name, True, num_points, None)
     except Exception as e:
         return (Path(record_path).name, False, 0, str(e))
 
-def print_progress(completed, total, successful, failed, start_time):
-    """Печатает прогресс-бар на одной строке."""
-    elapsed = time.time() - start_time
-    avg_time = elapsed / completed if completed > 0 else 0
-    remaining = (total - completed) * avg_time if avg_time > 0 else 0
-    
-    # Ширина прогресс-бара
-    bar_width = 40
-    filled = int(bar_width * completed / total)
-    bar = '█' * filled + '░' * (bar_width - filled)
-    
-    # Форматируем время
-    elapsed_str = f"{elapsed:.0f}s"
-    remaining_str = f"{remaining:.0f}s" if remaining > 0 else "0s"
-    
-    # Строка прогресса
-    progress_str = (f"\r[{bar}] {completed}/{total} "
-                    f"| OK {successful} ERR {failed} "
-                    f"| ~{remaining_str} сек")
-    
-    sys.stdout.write(progress_str)
-    sys.stdout.flush()
 
 def main():
     parser = argparse.ArgumentParser(description='Конвертирует WFDB файлы (.dat/.hea) в Dart формат')
@@ -129,13 +108,11 @@ def main():
         return
 
     total_files = len(process_args)
-    cpu_count = multiprocessing.cpu_count()
-    max_workers = min(args.workers if args.workers else cpu_count * 2, total_files)
+    max_workers = min(args.workers if args.workers else multiprocessing.cpu_count(), total_files)
 
     start_time = time.time()
     successful, failed = 0, 0
     error_messages = []
-
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:
         futures = [executor.submit(process_file_wrapper, args) for args in process_args]
@@ -154,11 +131,11 @@ def main():
 
     print()  # Переход на новую строку после завершения
     
-    
     if failed > 0:
-        print("\n❌ Ошибки:")
+        print("\nОшибки:")
         for error in error_messages:
             print(error)
+
 
 if __name__ == "__main__":
     main()

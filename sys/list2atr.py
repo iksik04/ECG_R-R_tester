@@ -2,7 +2,7 @@ import sys
 import os
 import wfdb
 import numpy as np
-from datetime import datetime
+
 
 def parse_peaks_string(peaks_str):
     """
@@ -19,7 +19,8 @@ def parse_peaks_string(peaks_str):
         print(f"Ошибка парсинга пиков: {e}", file=sys.stderr)
         return []
 
-def save_atr_file(peaks, output_path, sampling_freq=250, description=""):
+
+def save_atr_file(peaks, output_path):
     """
     Сохраняет пики в формате .atr с использованием библиотеки wfdb
     """
@@ -69,12 +70,11 @@ def save_atr_file(peaks, output_path, sampling_freq=250, description=""):
         
         return len(peaks_sorted)
         
-    except FileNotFoundError as e:
-        raise Exception(f"Ошибка: директория '{output_dir}' не найдена или недоступна. {e}")
-    except PermissionError as e:
-        raise Exception(f"Ошибка доступа: нет прав на запись в '{output_dir}'. {e}")
+    except (FileNotFoundError, PermissionError) as e:
+        raise Exception(f"Ошибка при записи аннотаций: {e}")
     except Exception as e:
         raise Exception(f"Ошибка при записи аннотаций с помощью wfdb: {e}")
+
 
 def main():
     # Проверяем аргументы командной строки
@@ -104,12 +104,12 @@ def main():
     if not peaks:
         print("Предупреждение: список пиков пуст. Создаётся файл без пиков.", file=sys.stderr)
     
-    # === ДОБАВЛЕННАЯ ЧАСТЬ: СОХРАНЯЕМ ПИКИ ===
     try:
         count = save_atr_file(peaks, output_file)
     except Exception as e:
         print(f"Ошибка при сохранении: {e}", file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

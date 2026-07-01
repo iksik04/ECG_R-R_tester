@@ -1,1 +1,5 @@
 **/DATA/
+
+__pycache__/
+*.pyc
+*.pyo

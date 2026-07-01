@@ -1,12 +1,12 @@
 import argparse
 import multiprocessing
 import time
-import sys
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import Dict, List, Tuple, Optional
 import wfdb
 import numpy as np
+from utils import print_progress
 
 
 class PeakValidator:
@@ -17,16 +17,6 @@ class PeakValidator:
         self.predictions_dir = Path(predictions_dir)
         self.results_dir = Path(results_dir)
         self.results_dir.mkdir(parents=True, exist_ok=True)
-        self._fs_cache = {}  # Кэш для частоты дискретизации
-    
-    def get_record_info(self, record_name: str, ann_dir: Path) -> Tuple[int, Optional[str]]:
-        """Получает частоту дискретизации из заголовка записи"""
-        try:
-            record_path = ann_dir / record_name
-            record = wfdb.rdrecord(str(record_path))
-            return record.fs, None
-        except Exception as e:
-            return 0, f"Error reading record {record_name}: {e}"
     
     def get_peaks_from_annotation(self, record_name: str, ann_dir: Path, 
                                   ann_ext: str = 'atr', 
@@ -38,7 +28,7 @@ class PeakValidator:
         try:
             ann_file = ann_dir / f"{record_name}.{ann_ext}"
             if not ann_file.exists():
-                return np.array([]), [], f"Annotation file not found: {ann_file}"
+                return np.array([]), [], f"Файл аннотаций не найден: {ann_file}"
             
             # Читаем аннотацию
             annotation = wfdb.rdann(str(ann_dir / record_name), ann_ext)
@@ -48,13 +38,14 @@ class PeakValidator:
             return peak_indices, symbols, None
             
         except Exception as e:
-            return np.array([]), [], f"Error reading annotation {record_name}: {e}"
+            return np.array([]), [], f"Ошибка чтения аннотации {record_name}: {e}"
     
     def filter_peaks_by_symbol(self, peak_indices: np.ndarray, 
                                symbols: List[str],
                                allowed_symbols: List[str] = None) -> np.ndarray:
         """
         Фильтрует пики по символам аннотаций.
+        По умолчанию оставляет символы 'N' и 'V'.
         """
         if allowed_symbols is None:
             allowed_symbols = ['N', 'V']
@@ -66,37 +57,33 @@ class PeakValidator:
         return peak_indices[mask]
     
     def evaluate_detection(self, true_peaks: np.ndarray, detected_peaks: np.ndarray,
-                           fs: int) -> Dict[str, float]:
+                           fs: int, tolerance_ms: float = 150.0) -> Dict[str, float]:
         """
-        Оценка работы QRS детектора с использованием толерантности 150 мс
+        Оценка работы QRS детектора с использованием толерантности в миллисекундах
         """
         if len(true_peaks) == 0:
             return {
-                'sensitivity': 0.0,
-                'specificity': 0.0,
-                'positive_predictive_value': 0.0,
-                'false_positives': 0,
-                'false_negatives': 0,
-                'missed_percent': 100.0,
-                'hr_error': 0.0,
-                'total_true': 0,
-                'total_detected': len(detected_peaks)
+                'Чувствительность': 0.0,
+                'Положительное предсказательное значение': 0.0,
+                'Ложноположительные': 0,
+                'Ложноотрицательные': 0,
+                'Процент пропущенных': 100.0,
+                'Всего истинных пиков': 0,
+                'Всего обнаруженных пиков': len(detected_peaks)
             }
         
         if len(detected_peaks) == 0:
             return {
-                'sensitivity': 0.0,
-                'specificity': 0.0,
-                'positive_predictive_value': 0.0,
-                'false_positives': 0,
-                'false_negatives': len(true_peaks),
-                'missed_percent': 100.0,
-                'hr_error': 0.0,
-                'total_true': len(true_peaks),
-                'total_detected': 0
+                'Чувствительность': 0.0,
+                'Положительное предсказательное значение': 0.0,
+                'Ложноположительные': 0,
+                'Ложноотрицательные': len(true_peaks),
+                'Процент пропущенных': 100.0,
+                'Всего истинных пиков': len(true_peaks),
+                'Всего обнаруженных пиков': 0
             }
         
-        tolerance = int(0.150 * fs)
+        tolerance = int((tolerance_ms / 1000.0) * fs)
         
         tp_count = 0
         matched_true = set()
@@ -114,66 +101,23 @@ class PeakValidator:
         fp_count = len(detected_peaks) - len(matched_detected)
         
         sensitivity = tp_count / (tp_count + fn_count) if (tp_count + fn_count) > 0 else 0.0
-        specificity = tp_count / (tp_count + fp_count) if (tp_count + fp_count) > 0 else 0.0
         positive_predictive_value = tp_count / (tp_count + fp_count) if (tp_count + fp_count) > 0 else 0.0
         missed_percent = fn_count / len(true_peaks) * 100 if len(true_peaks) > 0 else 0.0
         
-        hr_error = self.calculate_hr_error(true_peaks, detected_peaks, fs)
-        
         return {
-            'sensitivity': sensitivity,
-            'specificity': specificity,
-            'positive_predictive_value': positive_predictive_value,
-            'false_positives': fp_count,
-            'false_negatives': fn_count,
-            'missed_percent': missed_percent,
-            'hr_error': hr_error,
-            'total_true': len(true_peaks),
-            'total_detected': len(detected_peaks)
+            'Чувствительность': sensitivity,
+            'Положительное предсказательное значение': positive_predictive_value,
+            'Ложноположительные': fp_count,
+            'Ложноотрицательные': fn_count,
+            'Процент пропущенных': missed_percent,
+            'Всего истинных пиков': len(true_peaks),
+            'Всего обнаруженных пиков': len(detected_peaks)
         }
     
-    def calculate_hr_error(self, true_peaks: np.ndarray, detected_peaks: np.ndarray,
-                          fs: int) -> float:
-        """Вычисляет СКЗ погрешности ЧСС"""
-        if len(true_peaks) < 2 or len(detected_peaks) < 2:
-            return 0.0
-        
-        true_rr = []
-        sorted_true = sorted(true_peaks)
-        for i in range(1, len(sorted_true)):
-            true_rr.append((sorted_true[i] - sorted_true[i-1]) / fs)
-        
-        detected_rr = []
-        sorted_detected = sorted(detected_peaks)
-        for i in range(1, len(sorted_detected)):
-            detected_rr.append((sorted_detected[i] - sorted_detected[i-1]) / fs)
-        
-        min_len = min(len(true_rr), len(detected_rr))
-        if min_len == 0:
-            return 0.0
-        
-        errors = [(true_rr[i] - detected_rr[i]) ** 2 for i in range(min_len)]
-        
-        return np.sqrt(np.mean(errors)) if errors else 0.0
-    
-    def calculate_heart_rate(self, peaks: np.ndarray, fs: int) -> float:
-        """Вычисляет ЧСС по пикам"""
-        if len(peaks) < 2:
-            return 0.0
-        
-        sorted_peaks = sorted(peaks)
-        rr_intervals = []
-        for i in range(1, len(sorted_peaks)):
-            rr_intervals.append((sorted_peaks[i] - sorted_peaks[i-1]) / fs)
-        
-        if not rr_intervals:
-            return 0.0
-        
-        mean_rr = np.mean(rr_intervals)
-        return 60.0 / mean_rr if mean_rr > 0 else 0.0
-    
-    def validate_record(self, record_name: str, db_type: str = 'MIT-BIH',
-                       filter_predictions: bool = True) -> Dict[str, float]:
+    def validate_record(self, record_name: str, 
+                       filter_predictions: bool = True,
+                       allowed_symbols: List[str] = None,
+                       tolerance_ms: float = 150.0) -> Dict[str, float]:
         """
         Выполняет валидацию для одной записи.
         Сравнивает истинные аннотации с предсказанными.
@@ -188,15 +132,15 @@ class PeakValidator:
             return {'error': error}
         
         if len(true_peaks) == 0:
-            return {'error': 'No ground truth peaks found'}
+            return {'error': 'Истинные пики не найдены'}
         
         # Получаем частоту дискретизации из записи
-        fs, fs_error = self.get_record_info(record_name, self.annotations_dir)
-        if fs_error:
-            return {'error': fs_error}
-        
-        if fs == 0:
-            return {'error': 'Invalid sampling rate'}
+        try:
+            record_path = self.annotations_dir / record_name
+            record = wfdb.rdrecord(str(record_path))
+            fs = record.fs
+        except Exception as e:
+            return {'error': f"Ошибка чтения записи {record_name}: {e}"}
         
         # Получаем предсказанные пики с символами
         pred_peaks, pred_symbols, pred_error = self.get_peaks_from_annotation(
@@ -206,169 +150,71 @@ class PeakValidator:
         if pred_error:
             return {'error': pred_error}
         
-        # Применяем фильтрацию к предсказаниям (оставляем только N и V)
+        # Применяем фильтрацию к предсказаниям
         if filter_predictions and len(pred_peaks) > 0 and len(pred_symbols) > 0:
-            pred_peaks = self.filter_peaks_by_symbol(
-                pred_peaks, pred_symbols, allowed_symbols=['N', 'V']
-            )
+            pred_peaks = self.filter_peaks_by_symbol(pred_peaks, pred_symbols, allowed_symbols)
         
         # Оцениваем качество детекции
-        metrics = self.evaluate_detection(true_peaks, pred_peaks, fs)
-        
-        # Вычисляем ЧСС по предсказаниям
-        hr_detected = self.calculate_heart_rate(pred_peaks, fs)
-        hr_true = self.calculate_heart_rate(true_peaks, fs)
+        metrics = self.evaluate_detection(true_peaks, pred_peaks, fs, tolerance_ms)
         
         # Формируем результаты
-        results['Чувствительность QRS'] = metrics['sensitivity']
-        results['Специфичность QRS'] = metrics['specificity']
-        results['Положительное предсказательное значение'] = metrics['positive_predictive_value']
-        results['Число ложноположительных результатов'] = metrics['false_positives']
-        results['СКЗ погрешности ЧСС'] = metrics['hr_error']
-        results['Процент пропущенных кардиоциклов'] = metrics['missed_percent']
-        
-        # Заглушки для VEB и других параметров
-        results['Чувствительность VEB'] = 0.0
-        results['Специфичность VEB'] = 0.0
-        
-        if db_type in ['MIT-BIH', 'AHA']:
-            results['Чувствительность к желудочковому куплету'] = 0.0
-            results['Специфичность желудочкового куплета'] = 0.0
-            results['Чувствительность к желудочковой короткой серии'] = 0.0
-            results['Специфичность желудочковой короткой серии'] = 0.0
-            results['Чувствительность к желудочковой длинной серии'] = 0.0
-            results['Специфичность желудочковой длинной серии'] = 0.0
-        
-        results['Total_True_Peaks'] = metrics['total_true']
-        results['Total_Detected_Peaks'] = metrics['total_detected']
-        results['Heart_Rate_True'] = hr_true
-        results['Heart_Rate_Detected'] = hr_detected
-        results['False_Negatives'] = metrics['false_negatives']
+        results['Чувствительность'] = metrics['Чувствительность']
+        results['Положительное предсказательное значение'] = metrics['Положительное предсказательное значение']
+        results['Ложноположительные'] = metrics['Ложноположительные']
+        results['Ложноотрицательные'] = metrics['Ложноотрицательные']
+        results['Процент пропущенных'] = metrics['Процент пропущенных']
+        results['Всего истинных пиков'] = metrics['Всего истинных пиков']
+        results['Всего обнаруженных пиков'] = metrics['Всего обнаруженных пиков']
         
         return results
     
-    def save_results(self, record_name: str, results: Dict[str, float],
-                     db_name: str, db_type: str = 'MIT-BIH') -> Path:
+    def save_results(self, record_name: str, results: Dict[str, float]) -> Path:
         """Сохраняет результаты в файл"""
         output_file = self.results_dir / f"{record_name}_results.txt"
         
         with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(f"Database: {db_name}\n")
-            f.write(f"Record: {record_name}\n")
-            f.write(f"Type: {db_type}\n")
-            f.write("-" * 60 + "\n")
+            f.write(f"Запись: {record_name}\n")
+            f.write("-" * 50 + "\n")
             
-            if db_type in ['MIT-BIH', 'AHA']:
-                param_order = [
-                    'Чувствительность QRS',
-                    'Специфичность QRS',
-                    'Положительное предсказательное значение',
-                    'Чувствительность VEB',
-                    'Специфичность VEB',
-                    'Число ложноположительных результатов',
-                    'СКЗ погрешности ЧСС',
-                    'Чувствительность к желудочковому куплету',
-                    'Специфичность желудочкового куплета',
-                    'Чувствительность к желудочковой короткой серии',
-                    'Специфичность желудочковой короткой серии',
-                    'Чувствительность к желудочковой длинной серии',
-                    'Специфичность желудочковой длинной серии',
-                    'Процент пропущенных кардиоциклов',
-                    'Процент пропущенных N при ВЫКЛЮЧЕНИИ',
-                    'Процент пропущенных V при ВЫКЛЮЧЕНИИ',
-                    'Процент пропущенных F при ВЫКЛЮЧЕНИИ'
-                ]
-            else:
-                param_order = [
-                    'Чувствительность QRS',
-                    'Специфичность QRS',
-                    'Положительное предсказательное значение',
-                    'Чувствительность VEB',
-                    'Специфичность VEB',
-                    'Число ложноположительных результатов',
-                    'СКЗ погрешности ЧСС',
-                    'Процент пропущенных кардиоциклов',
-                    'Процент пропущенных N при ВЫКЛЮЧЕНИИ',
-                    'Процент пропущенных V при ВЫКЛЮЧЕНИИ',
-                    'Процент пропущенных F при ВЫКЛЮЧЕНИИ'
-                ]
+            # Основные метрики
+            param_order = [
+                ('Чувствительность', '{:.4f}'),
+                ('Положительное предсказательное значение', '{:.4f}'),
+                ('Ложноположительные', '{:d}'),
+                ('Ложноотрицательные', '{:d}'),
+                ('Процент пропущенных', '{:.2f}'),
+                ('Всего истинных пиков', '{:d}'),
+                ('Всего обнаруженных пиков', '{:d}')
+            ]
             
-            for param in param_order:
-                if param in results:
-                    if param in ['Число ложноположительных результатов', 'False_Negatives']:
-                        f.write(f"{param}: {int(results[param])}\n")
+            for key, fmt in param_order:
+                if key in results:
+                    if 'd' in fmt:  # целые числа
+                        f.write(f"{key}: {fmt.format(int(results[key]))}\n")
                     else:
-                        f.write(f"{param}: {results[param]:.4f}\n")
+                        f.write(f"{key}: {fmt.format(results[key])}\n")
             
-            f.write("-" * 60 + "\n")
-            f.write("Additional Info:\n")
-            if 'Total_True_Peaks' in results:
-                f.write(f"  Total True Peaks: {int(results['Total_True_Peaks'])}\n")
-            if 'Total_Detected_Peaks' in results:
-                f.write(f"  Total Detected Peaks: {int(results['Total_Detected_Peaks'])}\n")
-            if 'Heart_Rate_True' in results and results['Heart_Rate_True'] > 0:
-                f.write(f"  Heart Rate (True): {results['Heart_Rate_True']:.2f} BPM\n")
-            if 'Heart_Rate_Detected' in results and results['Heart_Rate_Detected'] > 0:
-                f.write(f"  Heart Rate (Detected): {results['Heart_Rate_Detected']:.2f} BPM\n")
-            if 'False_Negatives' in results:
-                f.write(f"  False Negatives (Missed): {int(results['False_Negatives'])}\n")
+            f.write("-" * 50 + "\n")
         
         return output_file
 
 
-def print_progress(completed, total, successful, failed, start_time):
-    """Печатает прогресс-бар на одной строке."""
-    elapsed = time.time() - start_time
-    avg_time = elapsed / completed if completed > 0 else 0
-    remaining = (total - completed) * avg_time if avg_time > 0 else 0
-    
-    # Ширина прогресс-бара
-    bar_width = 40
-    filled = int(bar_width * completed / total)
-    bar = '█' * filled + '░' * (bar_width - filled)
-    
-    # Форматируем время
-    elapsed_str = f"{elapsed:.0f}s"
-    remaining_str = f"{remaining:.0f}s" if remaining > 0 else "0s"
-    
-    # Строка прогресса
-    progress_str = (f"\r[{bar}] {completed}/{total} "
-                    f"| OK {successful} ERR {failed} "
-                    f"| ~{remaining_str} сек")
-    
-    sys.stdout.write(progress_str)
-    sys.stdout.flush()
-
-
 def process_record_wrapper(args: Tuple) -> Tuple[str, bool, str]:
     """Обертка для многопроцессорной обработки"""
-    record_name, annotations_dir, predictions_dir, results_dir, db_name, db_type, filter_pred = args
+    record_name, annotations_dir, predictions_dir, results_dir, filter_pred, tolerance_ms, symbols = args
     
     try:
         validator = PeakValidator(annotations_dir, predictions_dir, results_dir)
-        results = validator.validate_record(record_name, db_type, filter_pred)
+        results = validator.validate_record(record_name, filter_pred, symbols, tolerance_ms)
         
         if 'error' in results:
-            return (record_name, False, f"Validation error: {results['error']}")
+            return (record_name, False, f"Ошибка валидации: {results['error']}")
         
-        output_file = validator.save_results(record_name, results, db_name, db_type)
+        output_file = validator.save_results(record_name, results)
         return (record_name, True, str(output_file))
         
     except Exception as e:
-        return (record_name, False, f"Exception: {str(e)}")
-
-
-def detect_database_type(db_name: str) -> str:
-    """Определяет тип БД по имени"""
-    db_name_upper = db_name.upper()
-    if 'MIT' in db_name_upper or 'BIH' in db_name_upper:
-        return 'MIT-BIH'
-    elif 'AHA' in db_name_upper:
-        return 'AHA'
-    elif 'NST' in db_name_upper:
-        return 'NST'
-    else:
-        return 'MIT-BIH'
+        return (record_name, False, f"Исключение: {str(e)}")
 
 
 def main():
@@ -385,6 +231,10 @@ def main():
                         help='Количество параллельных процессов (по умолчанию: количество ядер CPU)')
     parser.add_argument('--no-filter', action='store_true',
                         help='Не фильтровать предсказания по символам N/V')
+    parser.add_argument('--tolerance', type=float, default=150.0,
+                        help='Толерантность в миллисекундах (по умолчанию: 150 мс)')
+    parser.add_argument('--symbols', type=str, default='N,V',
+                        help='Символы для фильтрации через запятую (по умолчанию: N,V)')
     
     args = parser.parse_args()
     
@@ -402,8 +252,8 @@ def main():
     
     results_dir.mkdir(parents=True, exist_ok=True)
     
-    db_name = annotations_dir.name
-    db_type = detect_database_type(db_name)
+    # Парсим символы для фильтрации
+    allowed_symbols = [s.strip() for s in args.symbols.split(',') if s.strip()]
     
     # Находим все файлы аннотаций в папке с истинными данными
     atr_files = list(annotations_dir.glob("*.atr"))
@@ -424,9 +274,9 @@ def main():
                 str(annotations_dir),
                 str(predictions_dir),
                 str(results_dir),
-                db_name,
-                db_type,
-                not args.no_filter
+                not args.no_filter,
+                args.tolerance,
+                allowed_symbols
             ))
         else:
             print(f"Предупреждение: Нет предсказаний для {record_name} (файл {pred_file} не найден)")
@@ -436,13 +286,7 @@ def main():
         return
     
     total_files = len(process_args)
-    cpu_count = multiprocessing.cpu_count()
-    
-    # Определяем количество процессов
-    if args.workers:
-        max_workers = min(args.workers, total_files)
-    else:
-        max_workers = min(cpu_count * 2, total_files)
+    max_workers = min(args.workers if args.workers else multiprocessing.cpu_count(), total_files)
     
     start_time = time.time()
     completed = 0
@@ -464,14 +308,13 @@ def main():
                 if result[2]:
                     error_messages.append(f"  - {result[0]}: {result[2]}")
             
-            # Используем обновленный прогресс-бар
             print_progress(completed, total_files, successful, failed, start_time)
     
     print()  # Переход на новую строку после завершения
     
     # Вывод ошибок если они были
     if failed > 0:
-        print("\n Ошибки:")
+        print("\nОшибки:")
         for error in error_messages:
             print(error)
 
