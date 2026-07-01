@@ -7,17 +7,18 @@ import time
 from utils import print_progress
 
 
-def convert_dat_to_dart(record_name, dart_filename):
+def convert_dat_to_csv(record_name, csv_filename):
     """
-    Конвертирует WFDB запись (.dat + .hea) в Dart формат.
-    Сохраняет физические значения (например, мВ) как double.
+    Конвертирует WFDB запись (.dat + .hea) в CSV формат.
+    Первая строка: частота дискретизации (целое число).
+    Последующие строки: значения ЭКГ (физические единицы, например мВ),
+    по одному числу на строку.
     """
     hea_path = Path(record_name).with_suffix('.hea')
     if not hea_path.exists():
         raise FileNotFoundError(f"Файл заголовка {hea_path} не найден")
 
     try:
-        # Читаем запись. physical=True возвращает значения в мВ и т.д.
         record = wfdb.rdrecord(str(record_name), physical=True)
     except Exception as e:
         raise RuntimeError(f"Ошибка чтения WFDB записи: {e}")
@@ -25,33 +26,22 @@ def convert_dat_to_dart(record_name, dart_filename):
     if record.p_signal is None or record.p_signal.size == 0:
         raise ValueError("Не удалось прочитать сигналы из записи")
 
-    # Для простоты берем первый канал (индекс 0). Можно расширить для многоканальных.
+    # Берём первый канал (можно расширить для многоканальных)
     data = record.p_signal[:, 0].flatten().tolist()
 
-    chunk_size = 6
-    chunks = []
-    for i in range(0, len(data), chunk_size):
-        chunk = data[i:i + chunk_size]
-        # Формат с одним знаком после запятой
-        chunks.append("  " + ", ".join(f"{x:.1f}" for x in chunk))
+    # Формируем содержимое CSV
+    lines = []
+    lines.append(str(int(record.fs)))   # первая строка – частота
+    # Каждое значение с одним знаком после запятой
+    for val in data:
+        lines.append(f"{val:.1f}")
 
-    chunks_with_comma = [chunk + "," if i < len(chunks) - 1 else chunk for i, chunk in enumerate(chunks)]
-
-    dart_content = f"""// ECG Data from {Path(record_name).name}
-// Sampling Freq {record.fs}
-// Physical units (e.g., mV)
-// Channel: {record.sig_name[0] if record.sig_name else 'Channel 0'}
-
-int samplingFreq = {record.fs};
-List<double> data = [
-{chr(10).join(chunks_with_comma)}
-];"""
-
-    output_dir = Path(dart_filename).parent
+    # Запись в файл
+    output_dir = Path(csv_filename).parent
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    with open(dart_filename, 'w', encoding='utf-8') as f:
-        f.write(dart_content)
+    with open(csv_filename, 'w', encoding='utf-8') as f:
+        f.write("\n".join(lines))
 
     return len(data)
 
@@ -60,9 +50,9 @@ def process_file_wrapper(args):
     """Обёртка для многопроцессорной обработки."""
     record_path, output_path = args
     try:
-        num_points = convert_dat_to_dart(
-            record_name=str(record_path),  # Передаем базовое имя без расширения
-            dart_filename=str(output_path)
+        num_points = convert_dat_to_csv(
+            record_name=str(record_path),
+            csv_filename=str(output_path)
         )
         return (Path(record_path).name, True, num_points, None)
     except Exception as e:
@@ -70,9 +60,11 @@ def process_file_wrapper(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Конвертирует WFDB файлы (.dat/.hea) в Dart формат')
+    parser = argparse.ArgumentParser(
+        description='Конвертирует WFDB файлы (.dat/.hea) в CSV формат для Pan-Tompkins алгоритма'
+    )
     parser.add_argument('input_dir', help='Путь к директории с файлами WFDB записей')
-    parser.add_argument('output_dir', help='Путь к директории для сохранения .dart файлов')
+    parser.add_argument('output_dir', help='Путь к директории для сохранения .csv файлов')
     parser.add_argument('--workers', '-w', type=int, default=None,
                         help='Количество параллельных процессов (по умолчанию: число ядер CPU)')
 
@@ -87,20 +79,17 @@ def main():
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Находим все .dat файлы, чтобы получить базовые имена записей
     dat_files = list(input_dir.glob("*.dat"))
     if not dat_files:
         print(f"В папке {input_dir} не найдено .dat файлов")
         return
 
-    # Для каждой записи нужен соответствующий .hea файл
     process_args = []
     for dat_path in dat_files:
         record_base = dat_path.stem
         hea_path = input_dir / f"{record_base}.hea"
         if hea_path.exists():
-            output_path = output_dir / f"{record_base}.dart"
-            # Передаем путь к записи (без расширения)
+            output_path = output_dir / f"{record_base}.csv"
             process_args.append((input_dir / record_base, output_path))
 
     if not process_args:
@@ -129,8 +118,8 @@ def main():
             completed = successful + failed
             print_progress(completed, total_files, successful, failed, start_time)
 
-    print()  # Переход на новую строку после завершения
-    
+    print()  # переход на новую строку
+
     if failed > 0:
         print("\nОшибки:")
         for error in error_messages:
