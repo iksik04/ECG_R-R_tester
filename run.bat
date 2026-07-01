@@ -86,7 +86,7 @@ for %%f in ("%dart_dir%\*.dart") do (
 )
 echo.
 echo Запущена валидация...
-python %project_root%sys\validation.py "%input_dir%" "%peaks_dir%" "%res_dir%"
+python %project_root%sys\validation.py "%input_dir%" "%peaks_dir%" "%res_dir%" --summary
 echo.
 echo Валидация успешно завершена!
 echo.
