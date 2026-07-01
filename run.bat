@@ -42,7 +42,7 @@ set res_dir=%project_root%DATA\RESULTS\%db_name%-RESULTS
 set ann_dir=%project_root%DATA\DATABASES\%db_name%
 
 echo Запущена конвертация файлов данных...
-python %project_root%sys\dat2dart.py "%input_dir%" "%dart_dir%"
+python %project_root%sys\wfdb2dart.py "%input_dir%" "%dart_dir%"
 echo.
 echo Конвертация завершена успешно!
 echo.
