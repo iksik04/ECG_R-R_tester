@@ -443,62 +443,30 @@ applyHighPassFilter(double val) {
   return y;
 }
 
-/// Чтение данных из файла
-List<double> readDataFromFile(String filePath) {
-  try {
-    File file = File(filePath);
-    String content = file.readAsStringSync();
-    
-    List<double> data = [];
-    content = content.replaceAll(RegExp(r'\s+'), ' ');
-    
-    RegExp regExp = RegExp(r'data\s*=\s*\[([^\]]*)\]|\[([^\]]*)\]');
-    Match? match = regExp.firstMatch(content);
-    
-    if (match != null) {
-      String listStr = match.group(1) ?? match.group(2) ?? '';
-      if (listStr.isNotEmpty) {
-        List<String> numbers = listStr.split(RegExp(r'\s*,\s*'));
-        for (String num in numbers) {
-          if (num.isNotEmpty) {
-            data.add(double.parse(num));
-          }
-        }
-      }
-    } else {
-      RegExp numRegExp = RegExp(r'[-+]?\d*\.?\d+');
-      Iterable<Match> matches = numRegExp.allMatches(content);
-      for (Match m in matches) {
-        data.add(double.parse(m.group(0)!));
-      }
-    }
-    
-    if (data.isEmpty) {
-      throw Exception('No valid data found in file');
-    }
-    
-    return data;
-  } catch (e) {
-    throw Exception('Error reading file: $e');
-  }
-}
+/// Читает CSV-файл с частотой в первой строке.
+/// Возвращает (частота_дискретизации, список_данных).
+(int, List<double>) readCSVWithFreq(String filePath) {
+  File file = File(filePath);
+  List<String> lines = file.readAsLinesSync();
+  if (lines.isEmpty) throw Exception('Empty CSV file');
 
-/// Чтение параметров из файла
-int readSamplingFrequency(String filePath) {
-  try {
-    File file = File(filePath);
-    String content = file.readAsStringSync();
-    
-    RegExp freqRegExp = RegExp(r'samplingFreq\s*=\s*(\d+)');
-    Match? freqMatch = freqRegExp.firstMatch(content);
-    if (freqMatch != null) {
-      return int.parse(freqMatch.group(1)!);
+  // Первая строка – частота дискретизации
+  int fs = int.parse(lines[0].trim());
+
+  List<double> data = [];
+  for (int i = 1; i < lines.length; i++) {
+    String line = lines[i].trim();
+    if (line.isEmpty) continue;
+    // Разбиваем по запятым или пробелам (поддержка нескольких чисел в строке)
+    List<String> parts = line.split(RegExp(r'[,\s]+'));
+    for (String p in parts) {
+      if (p.isNotEmpty) {
+        data.add(double.parse(p));
+      }
     }
-    
-    return 250;
-  } catch (e) {
-    return 250;
   }
+  if (data.isEmpty) throw Exception('No data found after first line');
+  return (fs, data);
 }
 
 void main(List<String> args) {
@@ -518,8 +486,8 @@ void main(List<String> args) {
       exit(1);
     }
     
-    List<double> data = readDataFromFile(inputFilePath);
-    int samplingFreq = readSamplingFrequency(inputFilePath);
+    // Чтение данных и частоты из CSV
+    var (samplingFreq, data) = readCSVWithFreq(inputFilePath);
     
     hprevFilterd = 0.0;
     hprevUnFiltered = 0.0;
