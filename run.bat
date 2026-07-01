@@ -36,20 +36,20 @@ goto menu
 set project_root=%~dp0
 
 set input_dir=%project_root%DATA\DATABASES\%db_name%
-set dart_dir=%project_root%DATA\DART-DATA\%db_name%-DART
+set dart_dir=%project_root%DATA\CSV-DATA\%db_name%-CSV
 set peaks_dir=%project_root%DATA\DETECTED-PEAKS\%db_name%-PEAKS
 set res_dir=%project_root%DATA\RESULTS\%db_name%-RESULTS
 set ann_dir=%project_root%DATA\DATABASES\%db_name%
 
 echo Запущена конвертация файлов данных...
-python %project_root%sys\wfdb2dart.py "%input_dir%" "%dart_dir%"
+python %project_root%sys\wfdb2csv.py "%input_dir%" "%dart_dir%"
 echo.
 echo Конвертация завершена успешно!
 echo.
 echo Запущена обработка данных валидируемым алгоритмом...
 echo.
 
-for %%f in ("%dart_dir%\*.dart") do (
+for %%f in ("%dart_dir%\*.csv") do (
     echo =============================================================
     echo Обработка: %%~nxf
     
@@ -81,7 +81,6 @@ for %%f in ("%dart_dir%\*.dart") do (
         )
     ) else (
         echo Файл %%~nf пропущен, эта запись не используется при валидации
-        echo =============================================================
     )
 )
 echo.
