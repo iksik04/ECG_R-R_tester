@@ -1,6 +1,8 @@
 import 'dart:io';
+import 'dart:convert';
 import 'dart:math';
 
+// --- Класс PanTompkinsQRS и все вспомогательные функции (без изменений) ---
 class PanTompkinsQRS {
   List<double> bandPassFilter(List<double> signal) {
     List<double> sig = List.from(signal);
@@ -126,6 +128,7 @@ class PanTompkinsQRS {
         integration_signal: mwin,
         band_pass_signal: bpass);
     double heartRate = (60 * fs) / average(diff(peaks.sublist(1)));
+    
     return (heartRate, peaks);
   }
 
@@ -335,7 +338,7 @@ class PanTompkinsQRS {
   }
 }
 
-// Вспомогательные функции
+// Вспомогательные функции (без изменений)
 List<double> convolution(List<double> signal) {
   List<double> sig1 = [...signal];
   List<double> sig2 = [for (int i = 0; i < 20; i++) 0.05];
@@ -406,7 +409,7 @@ double average(List signal) {
   return summ / signal.length;
 }
 
-/// Фильтры
+// Фильтры (глобальные переменные)
 double hprevFilterd = 0.0;
 double hprevUnFiltered = 0.0;
 double hprevprevUnfiltered = 0.0;
@@ -443,73 +446,55 @@ applyHighPassFilter(double val) {
   return y;
 }
 
-/// Читает CSV-файл с частотой в первой строке.
-/// Возвращает (частота_дискретизации, список_данных).
-(int, List<double>) readCSVWithFreq(String filePath) {
-  File file = File(filePath);
-  List<String> lines = file.readAsLinesSync();
-  if (lines.isEmpty) throw Exception('Empty CSV file');
+// --- НОВАЯ ФУНКЦИЯ MAIN (чтение JSON из stdin, вывод JSON) ---
+void main() {
+  // Сброс фильтров перед обработкой
+  hprevFilterd = 0.0;
+  hprevUnFiltered = 0.0;
+  hprevprevUnfiltered = 0.0;
+  hprevprevFilterd = 0.0;
+  lprevFilterd = 0.0;
+  lprevUnFiltered = 0.0;
+  lprevprevUnfiltered = 0.0;
+  lprevprevFilterd = 0.0;
 
-  // Первая строка – частота дискретизации
-  int fs = int.parse(lines[0].trim());
-
-  List<double> data = [];
-  for (int i = 1; i < lines.length; i++) {
-    String line = lines[i].trim();
-    if (line.isEmpty) continue;
-    // Разбиваем по запятым или пробелам (поддержка нескольких чисел в строке)
-    List<String> parts = line.split(RegExp(r'[,\s]+'));
-    for (String p in parts) {
-      if (p.isNotEmpty) {
-        data.add(double.parse(p));
-      }
-    }
+  // Чтение входных данных из stdin
+  // Сначала читаем все байты из stdin
+  List<int> bytes = [];
+  while (true) {
+    int? byte = stdin.readByteSync();
+    if (byte == -1) break; // Конец потока
+    bytes.add(byte);
   }
-  if (data.isEmpty) throw Exception('No data found after first line');
-  return (fs, data);
-}
-
-void main(List<String> args) {
-  // Проверка аргументов командной строки
-  if (args.isEmpty) {
-    print('Ошибка: необходимо указать путь к входному файлу');
-    print('Пример: dart run pan-tompkins-alg.dart DATA/DART-DATA/MIH-BIN-DART/100.dart');
+  
+  String input = utf8.decode(bytes);
+  
+  if (input.isEmpty) {
+    stderr.writeln("No input provided");
     exit(1);
   }
-  
-  String inputFilePath = args[0];
-  
+
+  Map<String, dynamic> jsonData;
   try {
-    File file = File(inputFilePath);
-    if (!file.existsSync()) {
-      print('Ошибка: файл не найден');
-      exit(1);
-    }
-    
-    // Чтение данных и частоты из CSV
-    var (samplingFreq, data) = readCSVWithFreq(inputFilePath);
-    
-    hprevFilterd = 0.0;
-    hprevUnFiltered = 0.0;
-    hprevprevUnfiltered = 0.0;
-    hprevprevFilterd = 0.0;
-    lprevFilterd = 0.0;
-    lprevUnFiltered = 0.0;
-    lprevprevUnfiltered = 0.0;
-    lprevprevFilterd = 0.0;
-    
-    PanTompkinsQRS qrsDetector = PanTompkinsQRS();
-    List<double> filterdData = [for (double i in data) applyHighPassFilter(i)];
-    filterdData = [for (double i in filterdData) applyLowPassFilter(i)];
-    
-    var (heartRate, peaks) = qrsDetector.solve(filterdData, samplingFreq);
-    
-    // Вывод списка пиков в консоль одной строкой
-    print(peaks.join(' '));
-    
+    jsonData = jsonDecode(input);
   } catch (e) {
-    // В случае ошибки выводим пустую строку
-    print('');
+    stderr.writeln("Invalid JSON input: $e");
     exit(1);
   }
+
+  List<double> signal = (jsonData['signal'] as List).cast<double>();
+  int fs = jsonData['fs'] as int;
+
+  // Применяем предварительную фильтрацию (как в оригинале)
+  List<double> filterdData = [for (double i in signal) applyHighPassFilter(i)];
+  filterdData = [for (double i in filterdData) applyLowPassFilter(i)];
+
+  PanTompkinsQRS qrsDetector = PanTompkinsQRS();
+  var result = qrsDetector.solve(filterdData, fs);
+
+  // Формируем JSON-ответ
+  Map<String, dynamic> output = {
+    'peaks': result.$2,   // список индексов пиков
+  };
+  print(jsonEncode(output));
 }

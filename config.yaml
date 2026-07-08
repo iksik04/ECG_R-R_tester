@@ -1,0 +1,39 @@
+# Пути относительно корня проекта
+paths:
+  databases_root: "DATA/DATABASES"
+  pred_annotations_root: "DATA/PRED_ANNOTATIONS"
+  results_root: "DATA/RESULTS"
+
+# Доступные базы данных
+databases:
+  - "MIT-BIH"
+  - "AHA"
+  - "NSTDB"
+
+# Параметры запуска Dart
+dart:
+  executable: "dart"                # команда dart (должна быть в PATH)
+  script_path: "algs/pan-tompkins-alg.dart"
+
+# Частоты дискретизации (если не указаны, читаются из .hea)
+sampling_frequencies:
+  MIT-BIH: 360
+  AHA: 250
+  NSTDB: 128
+
+# Файлы, которые следует пропустить (номера записей)
+skip_files:
+  MIT-BIH: ["102", "104", "107", "217"]
+  AHA: []
+  NSTDB: ["bw", "em", "ma"]
+
+# Символы аннотаций, учитываемые при валидации (ГОСТ: N и V)
+annotation_symbols: ["N", "V"]
+
+# Толерантность при поиске пиков (мс)
+tolerance_ms: 150.0
+
+# Максимальное число параллельных процессов (по умолчанию – число ядер CPU)
+max_workers: 4
+
+save_json_debug: false
